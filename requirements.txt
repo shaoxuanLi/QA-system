@@ -1,0 +1,11 @@
+bm25s>=0.2.0
+PyStemmer>=2.2.0
+sentence-transformers>=2.7.0
+torch>=2.0.0
+transformers>=4.40.0
+gradio>=4.0.0
+requests>=2.31.0
+tqdm>=4.66.0
+pyyaml>=6.0
+numpy>=1.24.0
+jsonlines>=4.0.0

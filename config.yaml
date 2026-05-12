@@ -1,0 +1,41 @@
+# =============================================================
+# RAG QA 系统配置
+# 运行前请把 SILICONFLOW_API_KEY 填进环境变量，或直接写在下方 api_key
+# =============================================================
+
+data:
+  corpus: wiki18_100w.jsonl     # 1M 维基百科段落
+  dev:    dev.jsonl
+  test:   test.jsonl
+
+index:
+  dir:        indices/bm25      # bm25s 索引目录
+  offsets:    indices/offsets.npy   # 文档行偏移表 (用于按需读取语料)
+
+retriever:
+  type:  bm25
+  top_k: 20                     # BM25 召回数
+
+reranker:
+  enabled: true
+  model:   BAAI/bge-reranker-base
+  top_k:   5                    # 进入 LLM 上下文的最终文档数
+  device:  cpu                  # 'cuda' 'mps' 'cpu'
+  batch_size: 32
+
+generator:
+  api_url:      https://api.siliconflow.cn/v1/chat/completions
+  model:        Qwen/Qwen2.5-7B-Instruct
+  api_key:      ""                          # 留空则读环境变量 SILICONFLOW_API_KEY
+  api_key_env:  SILICONFLOW_API_KEY
+  max_tokens:   256
+  temperature:  0.0
+  timeout:      60
+  max_retries:  3
+
+inference:
+  num_workers: 8                # 并发调用 API 的线程数
+
+output:
+  dev:  outputs/dev.txt
+  test: outputs/test.txt
