@@ -38,8 +38,9 @@ def build_pipeline(cfg: dict, use_rerank: bool, top_k_retrieve: int, top_k_final
         model=g["model"],
         api_key=g.get("api_key", ""),
         api_key_env=g.get("api_key_env", "SILICONFLOW_API_KEY"),
-        max_tokens=g.get("max_tokens", 256),
+        max_tokens=g.get("max_tokens", 64),
         temperature=g.get("temperature", 0.0),
+        frequency_penalty=g.get("frequency_penalty", 0.0),
         timeout=g.get("timeout", 60),
         max_retries=g.get("max_retries", 3),
     )
@@ -73,6 +74,10 @@ def main():
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--dump-jsonl", default=None)
     parser.add_argument("--out", default=None, help="覆盖默认输出路径")
+    parser.add_argument(
+        "--retry-empty", action="store_true",
+        help="只重跑当前输出文件中为空的那些行（用于补失败请求）"
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -86,19 +91,45 @@ def main():
     rows = list(iter_jsonl(data_path))
     if args.limit:
         rows = rows[: args.limit]
-    questions = [r["question"] for r in rows]
+
+    out_path = args.out or cfg["output"][args.split]
+
+    # ---------- --retry-empty: 只跑现有 out_path 中为空的行 ----------
+    existing: list[str] = []
+    indices_to_run: list[int] = list(range(len(rows)))
+    if args.retry_empty:
+        if not os.path.exists(out_path):
+            print(f"[infer] --retry-empty: {out_path} 不存在，将跑全部")
+        else:
+            existing = [l.rstrip("\n") for l in open(out_path, "r", encoding="utf-8")]
+            if len(existing) != len(rows):
+                raise ValueError(
+                    f"--retry-empty: 行数不一致 {out_path}={len(existing)} vs {data_path}={len(rows)}"
+                )
+            indices_to_run = [i for i, a in enumerate(existing) if not a.strip()]
+            print(f"[infer] --retry-empty: 仅重跑 {len(indices_to_run)}/{len(rows)} 个空行")
+            if not indices_to_run:
+                print("[infer] 没有需要重跑的空行，退出")
+                return
+
+    questions = [rows[i]["question"] for i in indices_to_run]
 
     print(f"[infer] split={args.split}  n={len(questions)}  rerank={use_rerank}  "
           f"top_k_retrieve={top_k_retrieve}  top_k_final={top_k_final}")
 
     pipe = build_pipeline(cfg, use_rerank, top_k_retrieve, top_k_final)
     results = pipe.answer_batch(
-        questions, num_workers=cfg["inference"].get("num_workers", 8)
+        questions, num_workers=cfg["inference"].get("num_workers", 4)
     )
 
-    answers = [r.answer for r in results]
+    # 合并到 answers (保持原有非空)
+    if args.retry_empty and existing:
+        answers = list(existing)
+        for idx, res in zip(indices_to_run, results):
+            answers[idx] = res.answer
+    else:
+        answers = [r.answer for r in results]
 
-    out_path = args.out or cfg["output"][args.split]
     write_lines(out_path, answers)
     print(f"[infer] answers written to {out_path}")
 

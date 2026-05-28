@@ -13,6 +13,33 @@ from ..utils.io import CorpusReader
 from .prompts import build_messages
 
 
+def _post_process_answer(text: str, max_chars: int = 150) -> str:
+    """规范化 LLM 输出，避免 token 循环 / 多行答案污染 dev.txt。
+    - 取第一行非空内容
+    - 去掉首尾引号 / 多余空白
+    - 限长 (硬截断)
+    """
+    if not text:
+        return ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            text = line
+            break
+    else:
+        return ""
+    # 去掉常见前缀 "Answer:" "答案：" "Final answer:"
+    for prefix in ("Answer:", "answer:", "ANSWER:", "Final answer:", "答案：", "答："):
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+            break
+    # 去引号
+    text = text.strip().strip('"').strip("'").strip()
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0]
+    return text
+
+
 @dataclass
 class RAGResult:
     question: str
@@ -64,9 +91,10 @@ class RAGPipeline:
             final_texts = texts[: self.final_top_k]
             final_meta = candidates[: self.final_top_k]
 
-        # 3) 生成
+        # 3) 生成 + 后处理
         messages = build_messages(question, final_texts)
-        answer = self.llm.chat(messages)
+        raw = self.llm.chat(messages)
+        answer = _post_process_answer(raw)
 
         return RAGResult(
             question=question,
@@ -113,8 +141,9 @@ class RAGPipeline:
             finals.append(final_meta)
             prompts.append(build_messages(q, final_texts))
 
-        # 3) 并发调用 LLM
-        answers = self.llm.chat_batch(prompts, num_workers=num_workers, desc="generate")
+        # 3) 并发调用 LLM + 后处理
+        raw_answers = self.llm.chat_batch(prompts, num_workers=num_workers, desc="generate")
+        answers = [_post_process_answer(a) for a in raw_answers]
 
         return [
             RAGResult(

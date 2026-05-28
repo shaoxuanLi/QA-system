@@ -1,8 +1,12 @@
 __pycache__/
 *.pyc
 .DS_Store
+.venv/
 indices/
 outputs/
+smoke/
+*.bak.txt
 *.jsonl
 *.zip
 .env
+__MACOSX/

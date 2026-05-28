@@ -19,7 +19,7 @@ retriever:
 reranker:
   enabled: true
   model:   BAAI/bge-reranker-base
-  top_k:   5                    # 进入 LLM 上下文的最终文档数
+  top_k:   3                    # 进入 LLM 上下文的最终文档数（消融最优）
   device:  cpu                  # 'cuda' 'mps' 'cpu'
   batch_size: 32
 
@@ -28,14 +28,17 @@ generator:
   model:        Qwen/Qwen2.5-7B-Instruct
   api_key:      ""                          # 留空则读环境变量 SILICONFLOW_API_KEY
   api_key_env:  SILICONFLOW_API_KEY
-  max_tokens:   256
-  temperature:  0.0
-  timeout:      60
-  max_retries:  3
+  max_tokens:        64       # 答案是 short span，硬上限止损 (Qwen 低温时偶尔 token 循环)
+  temperature:       0.0
+  frequency_penalty: 0.5      # 抑制 token 重复退化
+  timeout:           60
+  max_retries:       5        # 服务端 429/5xx 时的最大重试次数
 
 inference:
-  num_workers: 8                # 并发调用 API 的线程数
+  num_workers: 4                # 并发调用 API 的线程数（8 路在硅基流动会触发限流）
 
 output:
-  dev:  outputs/dev.txt
-  test: outputs/test.txt
+  # PDF 要求: 验证集和测试集上的答案命名为 dev.txt / test.txt。
+  # 默认直接写到项目根目录，提交时打包即可。
+  dev:  dev.txt
+  test: test.txt

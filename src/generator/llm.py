@@ -20,8 +20,9 @@ class SiliconFlowLLM:
         model: str = "Qwen/Qwen2.5-7B-Instruct",
         api_key: str = "",
         api_key_env: str = "SILICONFLOW_API_KEY",
-        max_tokens: int = 256,
+        max_tokens: int = 64,
         temperature: float = 0.0,
+        frequency_penalty: float = 0.0,
         timeout: int = 60,
         max_retries: int = 3,
     ):
@@ -35,6 +36,7 @@ class SiliconFlowLLM:
             )
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self.frequency_penalty = frequency_penalty
         self.timeout = timeout
         self.max_retries = max_retries
 
@@ -51,6 +53,8 @@ class SiliconFlowLLM:
             "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
             "temperature": temperature if temperature is not None else self.temperature,
         }
+        if self.frequency_penalty:
+            payload["frequency_penalty"] = self.frequency_penalty
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -65,12 +69,20 @@ class SiliconFlowLLM:
                     timeout=self.timeout,
                 )
                 if resp.status_code == 429:
-                    # rate limit, 指数退避
-                    time.sleep(2 ** attempt)
+                    last_err = RuntimeError(f"HTTP 429 rate-limited (attempt {attempt+1})")
+                    # 指数退避：2/4/8/16/32 秒
+                    time.sleep(min(2 ** (attempt + 1), 32))
+                    continue
+                if resp.status_code >= 500:
+                    last_err = RuntimeError(f"HTTP {resp.status_code} {resp.text[:200]}")
+                    time.sleep(min(2 ** (attempt + 1), 32))
                     continue
                 resp.raise_for_status()
                 data = resp.json()
                 return data["choices"][0]["message"]["content"].strip()
+            except requests.exceptions.RequestException as e:
+                last_err = e
+                time.sleep(min(2 ** (attempt + 1), 32))
             except Exception as e:  # noqa: BLE001
                 last_err = e
                 time.sleep(1.5 ** attempt)
@@ -84,6 +96,7 @@ class SiliconFlowLLM:
         desc: str = "LLM",
     ) -> list[str]:
         results: list[str] = [""] * len(message_batches)
+        errors: list[tuple[int, str]] = []
         with ThreadPoolExecutor(max_workers=num_workers) as ex:
             future_to_idx = {
                 ex.submit(self.chat, msgs): idx
@@ -98,5 +111,13 @@ class SiliconFlowLLM:
                 try:
                     results[idx] = fut.result()
                 except Exception as e:  # noqa: BLE001
-                    results[idx] = f"[ERROR] {e}"
+                    # 写空字符串避免污染 dev.txt/test.txt 评分
+                    results[idx] = ""
+                    errors.append((idx, str(e)))
+        if errors:
+            print(f"[LLM] {len(errors)} requests failed and were written as empty:")
+            for idx, msg in errors[:10]:
+                print(f"  - row {idx}: {msg}")
+            if len(errors) > 10:
+                print(f"  ... ({len(errors) - 10} more)")
         return results

@@ -28,11 +28,13 @@ QA-sys/
 │   └── utils/                 # config / jsonl / CorpusReader(按行偏移读语料)
 ├── scripts/
 │   ├── build_index.py         # 建 BM25 索引 + 行偏移
-│   ├── run_inference.py       # 跑 dev / test，生成 outputs/{dev,test}.txt
+│   ├── run_inference.py       # 跑 dev / test，生成根目录 dev.txt / test.txt
+│   ├── run_ablation.py        # 一键消融：8 组配置 -> ablation.md
 │   └── evaluate.py            # 与 dev.jsonl 对齐算 EM / F1
 ├── ui/app.py                  # Gradio Web 界面
-├── indices/                   # BM25 索引 + offsets（运行后生成）
-└── outputs/                   # dev.txt / test.txt（运行后生成）
+├── indices/                   # BM25 索引 + offsets（运行后生成，不提交）
+├── dev.txt / test.txt         # 答案输出，提交时一并打包
+└── report.md                  # 实验报告（自行填实验数字）
 ```
 
 ---
@@ -72,7 +74,7 @@ python -m scripts.run_inference --split dev  --config config.yaml
 python -m scripts.run_inference --split test --config config.yaml
 ```
 
-输出 `outputs/dev.txt` 与 `outputs/test.txt`，每行一个答案。
+输出根目录下的 `dev.txt` 与 `test.txt`（每行一个答案，命名严格遵循作业要求）。
 
 常用开关：
 - `--no-rerank`：关闭重排序器（用于消融）
@@ -83,7 +85,7 @@ python -m scripts.run_inference --split test --config config.yaml
 ## 评估
 
 ```bash
-python -m scripts.evaluate --pred outputs/dev.txt --gold dev.jsonl
+python -m scripts.evaluate --pred dev.txt --gold dev.jsonl
 ```
 
 输出 EM / F1。
@@ -98,16 +100,22 @@ python -m ui.app --config config.yaml
 
 ---
 
-## 消融建议
+## 消融实验
 
-复用 `--no-rerank` 与不同 `--top-k-final` 跑同一份 `dev.jsonl`，对比 EM/F1：
+一键跑 8 组配置，输出 `ablation.md` 对比表（同时落地各组预测到 `outputs/ablation/`）：
 
-| 配置 | 命令 |
-|---|---|
-| BM25 only, top1 | `--no-rerank --top-k-final 1` |
-| BM25 only, top5 | `--no-rerank --top-k-final 5` |
-| BM25 + Reranker, top5 | (默认) |
-| BM25 + Reranker, top1 | `--top-k-final 1` |
+```bash
+# 全量 (1000 条)
+python -m scripts.run_ablation --config config.yaml --out ablation.md
+# 先调通 (前 200 条)
+python -m scripts.run_ablation --limit 200
+```
+
+默认网格包含：
+- BM25 only vs BM25+Reranker × top_k_final ∈ {1, 3, 5}
+- Reranker 开启时 top_k_retrieve ∈ {20, 50, 100}
+
+把生成的表格贴进 [report.md](report.md) 即可。
 
 ---
 
