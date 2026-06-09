@@ -20,8 +20,8 @@ reranker:
   enabled: true
   model:   BAAI/bge-reranker-base
   top_k:   3                    # 进入 LLM 上下文的最终文档数（消融最优）
-  device:  cpu                  # 'cuda' 'mps' 'cpu'
-  batch_size: 32
+  device:  mps                  # Mac M-series GPU；'cuda' for NVIDIA；'cpu' for fallback
+  batch_size: 64                # GPU 可上更大批量
 
 generator:
   api_url:      https://api.siliconflow.cn/v1/chat/completions
@@ -36,6 +36,53 @@ generator:
 
 inference:
   num_workers: 4                # 并发调用 API 的线程数（8 路在硅基流动会触发限流）
+
+# UI 模型注册表：用户在前端 Dropdown 切换
+# 默认选 Qwen2.5-7B-Instruct (作业要求)；演示推荐 DeepSeek-V4-Pro
+# 添加新模型只需在此追加一项即可，UI 自动出现
+ui_models:
+  default: "Qwen2.5-7B-Instruct (课程默认)"
+
+  presets:
+    - name: "Qwen2.5-7B-Instruct (课程默认)"
+      api_url:      https://api.siliconflow.cn/v1/chat/completions
+      model:        Qwen/Qwen2.5-7B-Instruct
+      api_key_env:  SILICONFLOW_API_KEY
+      max_tokens:   64
+      temperature:  0.0
+      frequency_penalty: 0.5
+      prompt_mode:  strict
+      note: "作业指定模型；EM/F1 评分用的就是它"
+
+    - name: "DeepSeek-V4-Pro"
+      api_url:      https://llmapi.paratera.com/v1/chat/completions
+      model:        DeepSeek-V4-Pro
+      api_key_env:  PARATERA_KEY
+      max_tokens:   256
+      temperature:  0.0
+      frequency_penalty: 0.0
+      prompt_mode:  friendly
+      note: "演示最稳定 (8/8 测试题全对)"
+
+    - name: "GLM-5.1"
+      api_url:      https://llmapi.paratera.com/v1/chat/completions
+      model:        GLM-5.1
+      api_key_env:  PARATERA_KEY
+      max_tokens:   256
+      temperature:  0.0
+      frequency_penalty: 0.0
+      prompt_mode:  friendly
+      note: "智谱 GLM 5.1，答案准确但偶尔空回复"
+
+    - name: "Qwen3.6-Plus"
+      api_url:      https://llmapi.paratera.com/v1/chat/completions
+      model:        Qwen3.6-Plus
+      api_key_env:  PARATERA_KEY
+      max_tokens:   256
+      temperature:  0.0
+      frequency_penalty: 0.0
+      prompt_mode:  friendly
+      note: "Qwen 最新版，准确但较慢且啰嗦"
 
 output:
   # PDF 要求: 验证集和测试集上的答案命名为 dev.txt / test.txt。

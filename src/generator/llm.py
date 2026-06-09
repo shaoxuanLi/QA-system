@@ -52,9 +52,13 @@ class SiliconFlowLLM:
             "messages": messages,
             "max_tokens": max_tokens if max_tokens is not None else self.max_tokens,
             "temperature": temperature if temperature is not None else self.temperature,
+            # 防止 Qwen 退化时把 prompt 模板复述出来
+            "stop": ["\nuser", "\nPassages:", "\nQuestion:", "\n\n\n"],
         }
         if self.frequency_penalty:
             payload["frequency_penalty"] = self.frequency_penalty
+        if getattr(self, "top_p", None) is not None and self.top_p < 1.0:
+            payload["top_p"] = self.top_p
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",

@@ -28,7 +28,8 @@ from src.retriever import BM25Retriever
 from src.utils.io import CorpusReader, iter_jsonl, load_config, write_lines
 
 
-def build_pipeline(cfg: dict, use_rerank: bool, top_k_retrieve: int, top_k_final: int) -> RAGPipeline:
+def build_pipeline(cfg: dict, use_rerank: bool, top_k_retrieve: int, top_k_final: int,
+                   prompt_mode: str = "strict", max_tokens_override: int | None = None) -> RAGPipeline:
     retriever = BM25Retriever(cfg["index"]["dir"])
     corpus = CorpusReader(cfg["data"]["corpus"], cfg["index"]["offsets"])
 
@@ -38,7 +39,7 @@ def build_pipeline(cfg: dict, use_rerank: bool, top_k_retrieve: int, top_k_final
         model=g["model"],
         api_key=g.get("api_key", ""),
         api_key_env=g.get("api_key_env", "SILICONFLOW_API_KEY"),
-        max_tokens=g.get("max_tokens", 64),
+        max_tokens=max_tokens_override if max_tokens_override else g.get("max_tokens", 64),
         temperature=g.get("temperature", 0.0),
         frequency_penalty=g.get("frequency_penalty", 0.0),
         timeout=g.get("timeout", 60),
@@ -61,6 +62,7 @@ def build_pipeline(cfg: dict, use_rerank: bool, top_k_retrieve: int, top_k_final
         reranker=reranker,
         retrieve_top_k=top_k_retrieve,
         final_top_k=top_k_final,
+        prompt_mode=prompt_mode,
     )
 
 
@@ -77,6 +79,22 @@ def main():
     parser.add_argument(
         "--retry-empty", action="store_true",
         help="只重跑当前输出文件中为空的那些行（用于补失败请求）"
+    )
+    parser.add_argument(
+        "--prompt-mode", choices=["strict", "cot", "friendly"], default="strict",
+        help="strict=baseline 短答案; cot=few-shot+推理+Final Answer 抽取; friendly=完整句子"
+    )
+    parser.add_argument(
+        "--max-tokens", type=int, default=None,
+        help="覆盖 generator.max_tokens (CoT 模式建议 ≥256)"
+    )
+    parser.add_argument(
+        "--n-samples", type=int, default=1,
+        help="self-consistency 采样数 (1=贪婪, 3 或 5 = majority vote)"
+    )
+    parser.add_argument(
+        "--sample-temperature", type=float, default=0.4,
+        help="self-consistency 用的温度 (默认 0.4)"
     )
     args = parser.parse_args()
 
@@ -117,7 +135,12 @@ def main():
     print(f"[infer] split={args.split}  n={len(questions)}  rerank={use_rerank}  "
           f"top_k_retrieve={top_k_retrieve}  top_k_final={top_k_final}")
 
-    pipe = build_pipeline(cfg, use_rerank, top_k_retrieve, top_k_final)
+    pipe = build_pipeline(
+        cfg, use_rerank, top_k_retrieve, top_k_final,
+        prompt_mode=args.prompt_mode, max_tokens_override=args.max_tokens,
+    )
+    pipe.n_samples = args.n_samples
+    pipe.sample_temperature = args.sample_temperature
     results = pipe.answer_batch(
         questions, num_workers=cfg["inference"].get("num_workers", 4)
     )

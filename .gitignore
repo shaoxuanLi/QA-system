@@ -10,3 +10,5 @@ smoke/
 *.zip
 .env
 __MACOSX/
+*.pptx
+~.pptx
